@@ -1,42 +1,51 @@
-name: Build APK
+name: Build Release APK
 
 on:
-  push:
-    branches: [ "main" ]
+push:
+branches:
+- main
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+build:
+runs-on: ubuntu-latest
 
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+```
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 18
+  - name: Setup Node
+    uses: actions/setup-node@v4
+    with:
+      node-version: '18'
 
-    - name: Install Dependencies
-      run: npm install --legacy-peer-deps
+  - name: Install Dependencies
+    run: npm install --legacy-peer-deps
 
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: 17
+  - name: Setup Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: 'temurin'
+      java-version: '17'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+  - name: Setup Android SDK
+    uses: android-actions/setup-android@v3
 
-    - name: Grant Permission
-      run: chmod +x android/gradlew
+  - name: Grant Permission
+    run: chmod +x android/gradlew
 
-    - name: Build APK
-      run: cd android && ./gradlew assembleDebug
+  - name: Decode Keystore
+    run: |
+      echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/my-release-key.keystore
 
-    - name: Upload APK
-      uses: actions/upload-artifact@v4   # ✅ FIXED HERE
-      with:
-        name: my-app-apk
-        path: android/app/build/outputs/apk/debug/app-debug.apk
+  - name: Build Release APK
+    run: |
+      cd android
+      ./gradlew assembleRelease
+
+  - name: Upload APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: release-apk
+      path: android/app/build/outputs/apk/release/app-release.apk
+```
