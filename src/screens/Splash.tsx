@@ -38,7 +38,7 @@ export default function Splash({ navigation }: Props) {
 
     const timer = setTimeout(() => {
       navigation.replace("Auth");
-    }, 1800);
+    }, 700);
 
     return () => {
       clearTimeout(timer);

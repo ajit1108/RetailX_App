@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
@@ -7,6 +7,7 @@ import FadeInView from "../components/FadeInView";
 import Header from "../components/Header";
 import ScalePressable from "../components/ScalePressable";
 import { apiRequest } from "../services/apiClient";
+import { BILL_CREATED_EVENT, subscribeToAppEvent } from "../services/appEvents";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 
 const overviewCards = [
@@ -55,12 +56,38 @@ const performers = [
 
 export default function Dashboard({ navigation }: any) {
   const [dashboard, setDashboard] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiRequest<any>("/api/dashboard")
-      .then(setDashboard)
-      .catch(() => undefined);
-  }, []);
+    let active = true;
+
+    const loadDashboard = () => {
+      setLoading(true);
+
+      apiRequest<any>("/api/dashboard")
+        .then((response) => {
+          if (active) {
+            setDashboard(response);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (active) {
+            setLoading(false);
+          }
+        });
+    };
+
+    loadDashboard();
+    const unsubscribeFocus = navigation.addListener("focus", loadDashboard);
+    const unsubscribeBillCreated = subscribeToAppEvent(BILL_CREATED_EVENT, loadDashboard);
+
+    return () => {
+      active = false;
+      unsubscribeFocus();
+      unsubscribeBillCreated();
+    };
+  }, [navigation]);
 
   const cards = dashboard
     ? [
@@ -105,7 +132,7 @@ export default function Dashboard({ navigation }: any) {
         <FadeInView>
           <Header
             navigation={navigation}
-            notificationCount={dashboard?.summary?.unreadNotificationCount ?? 3}
+            notificationCount={dashboard?.summary?.unreadNotificationCount ?? 0}
           />
 
           <View style={styles.heroCard}>
@@ -123,20 +150,26 @@ export default function Dashboard({ navigation }: any) {
           </View>
 
           <View style={styles.cardGrid}>
-            {cards.map((card) => (
-              <View key={card.title} style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricLabel}>{card.title}</Text>
-                  <View style={[styles.metricIcon, { backgroundColor: `${card.accent}20` }]}>
-                    <Ionicons name={card.icon as any} size={20} color={card.accent} />
+            {loading
+              ? [0, 1].map((card) => (
+                  <View key={card} style={styles.metricCard}>
+                    <ActivityIndicator color={palette.primary} />
                   </View>
-                </View>
-                <Text style={styles.metricValue}>{card.value}</Text>
-                <Text style={[styles.metricChange, { color: card.accent }]}>
-                  {card.change}
-                </Text>
-              </View>
-            ))}
+                ))
+              : cards.map((card) => (
+                  <View key={card.title} style={styles.metricCard}>
+                    <View style={styles.metricHeader}>
+                      <Text style={styles.metricLabel}>{card.title}</Text>
+                      <View style={[styles.metricIcon, { backgroundColor: `${card.accent}20` }]}>
+                        <Ionicons name={card.icon as any} size={20} color={card.accent} />
+                      </View>
+                    </View>
+                    <Text style={styles.metricValue}>{card.value}</Text>
+                    <Text style={[styles.metricChange, { color: card.accent }]}>
+                      {card.change}
+                    </Text>
+                  </View>
+                ))}
           </View>
 
           <View style={styles.actionRow}>
@@ -166,7 +199,7 @@ export default function Dashboard({ navigation }: any) {
             <Text style={styles.sectionMeta}>{activeAlerts.length} active</Text>
           </View>
 
-          {activeAlerts.map((item: any) => (
+          {(loading ? [] : activeAlerts).map((item: any) => (
             <View key={item.title} style={styles.alertCard}>
               <View style={[styles.alertIcon, { backgroundColor: `${item.color}18` }]}>
                 <Ionicons name={item.icon as any} size={20} color={item.color} />
@@ -184,7 +217,7 @@ export default function Dashboard({ navigation }: any) {
             <Text style={styles.sectionMeta}>This week</Text>
           </View>
 
-          {topItems.map((item: any, index: number) => (
+          {(loading ? [] : topItems).map((item: any, index: number) => (
             <View
               key={item.title}
               style={[styles.performerCard, index === 0 ? styles.performerFeatured : null]}

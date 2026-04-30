@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { Dimensions, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Button, Card, SegmentedButtons, TextInput } from "react-native-paper";
+import React, { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Button, Card, Menu, SegmentedButtons, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { LineChart } from "react-native-chart-kit";
@@ -9,8 +9,6 @@ import FadeInView from "../components/FadeInView";
 import Header from "../components/Header";
 import { apiRequest } from "../services/apiClient";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
-
-const screenWidth = Dimensions.get("window").width;
 
 type Product = {
   name: string;
@@ -25,7 +23,9 @@ type Prediction = {
 
 export default function Analytics({ navigation }: any) {
   const [range, setRange] = useState("weekly");
-  const [occasion, setOccasion] = useState("");
+  const [occasion, setOccasion] = useState("Diwali");
+  const [customOccasion, setCustomOccasion] = useState("");
+  const [occasionMenuVisible, setOccasionMenuVisible] = useState(false);
   const [salesData, setSalesData] = useState<number[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
   const [topProducts, setTopProducts] = useState<Product[]>([]);
@@ -36,8 +36,14 @@ export default function Analytics({ navigation }: any) {
     "Dry fruits",
     "Snacks and beverages",
   ]);
+  const [loading, setLoading] = useState(true);
+  const [chartWidth, setChartWidth] = useState(0);
+  const [selectedPoint, setSelectedPoint] = useState<{
+    label: string;
+    value: number;
+  } | null>(null);
 
-  const getFilteredChartData = () => {
+  const chartData = useMemo(() => {
     if (range === "daily") {
       return {
         labels: labels.slice(-4),
@@ -63,39 +69,22 @@ export default function Analytics({ navigation }: any) {
     }
 
     return { labels, values: salesData };
-  };
-
-  const chartData = getFilteredChartData();
+  }, [labels, range, salesData]);
 
   useEffect(() => {
-    const sales = [500, 700, 400, 900, 1200, 800, 1500];
-    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const products: Product[] = [
-      { name: "Milk", totalSold: 120, quantity: 20 },
-      { name: "Bread", totalSold: 80, quantity: 5 },
-      { name: "Chips", totalSold: 200, quantity: 50 },
-      { name: "Soap", totalSold: 30, quantity: 40 },
-    ];
-
-    setSalesData(sales);
-    setLabels(days);
-    setTopProducts([...products].sort((a, b) => b.totalSold - a.totalSold).slice(0, 3));
-    setSlowProducts([...products].sort((a, b) => a.totalSold - b.totalSold).slice(0, 3));
-    setPredictions(
-      products.map((product) => {
-        const avg = product.totalSold / 7;
-        return {
-          name: product.name,
-          daysLeft: (avg > 0 ? product.quantity / avg : 0).toFixed(1),
-        };
-      })
-    );
-
     apiRequest<any>("/api/analytics")
       .then((response) => {
         if (response.weeklySales) {
-          setLabels(response.weeklySales.labels || days);
-          setSalesData(response.weeklySales.values || sales);
+          const nextLabels = response.weeklySales.labels || [];
+          const nextValues = response.weeklySales.values || [];
+          setLabels(nextLabels);
+          setSalesData(nextValues);
+          if (nextLabels.length && nextValues.length) {
+            setSelectedPoint({
+              label: nextLabels[nextValues.length - 1],
+              value: nextValues[nextValues.length - 1],
+            });
+          }
         }
         if (response.topSellingProducts) {
           setTopProducts(response.topSellingProducts);
@@ -113,19 +102,26 @@ export default function Analytics({ navigation }: any) {
           );
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
 
   const handleOccasionInsight = async () => {
+    const selectedOccasion = occasion === "Others" ? customOccasion.trim() : occasion;
+
+    if (!selectedOccasion) {
+      return;
+    }
+
     try {
       const response = await apiRequest<any>("/api/analytics/occasion", {
         method: "POST",
-        body: { occasion },
+        body: { occasion: selectedOccasion },
       });
       if (Array.isArray(response.suggestions)) {
         setSuggestions(response.suggestions);
       }
-    } catch (error) {
+    } catch {
       // Keep default suggestions visible when the API is unavailable.
     }
   };
@@ -134,7 +130,7 @@ export default function Analytics({ navigation }: any) {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <FadeInView>
-          <Header navigation={navigation} notificationCount={3} />
+          <Header navigation={navigation} />
 
           <View style={styles.heroCard}>
             <View style={styles.heroCopy}>
@@ -162,13 +158,33 @@ export default function Analytics({ navigation }: any) {
               density="small"
             />
           </View>
-          {chartData.values.length > 0 ? (
+          {loading ? (
             <Card style={styles.chartCard}>
-              <Card.Content>
+              <Card.Content style={styles.chartLoading}>
+                <ActivityIndicator color={palette.primary} />
+                <Text style={styles.chartHint}>Loading analytics...</Text>
+              </Card.Content>
+            </Card>
+          ) : chartData.values.length > 0 ? (
+            <Card style={styles.chartCard}>
+              <Card.Content
+                onLayout={(event) =>
+                  setChartWidth(Math.max(event.nativeEvent.layout.width - 32, 220))
+                }
+              >
+                <View style={styles.chartSummary}>
+                  <Text style={styles.chartSummaryLabel}>
+                    {selectedPoint?.label || chartData.labels[chartData.labels.length - 1]}
+                  </Text>
+                  <Text style={styles.chartSummaryValue}>
+                    Rs {Number(selectedPoint?.value || 0).toFixed(0)}
+                  </Text>
+                  <Text style={styles.chartHint}>Tap a point to inspect a day or period.</Text>
+                </View>
                 <LineChart
                   data={{ labels: chartData.labels, datasets: [{ data: chartData.values }] }}
-                  width={screenWidth - 60}
-                  height={200}
+                  width={chartWidth || 280}
+                  height={220}
                   yAxisLabel="Rs "
                   chartConfig={{
                     backgroundColor: palette.surface,
@@ -177,21 +193,39 @@ export default function Analytics({ navigation }: any) {
                     decimalPlaces: 0,
                     color: () => palette.primary,
                     labelColor: () => palette.subtext,
+                    strokeWidth: 3,
+                    fillShadowGradientFrom: palette.primary,
+                    fillShadowGradientFromOpacity: 0.16,
+                    fillShadowGradientToOpacity: 0.02,
                     propsForDots: {
-                      r: "4",
+                      r: "5",
                       strokeWidth: "2",
                       stroke: palette.primaryDark,
                     },
                   }}
                   bezier
-                  withInnerLines={false}
-                  withOuterLines
+                  withInnerLines
+                  withOuterLines={false}
                   fromZero
+                  withShadow
+                  segments={4}
+                  onDataPointClick={({ value, index }) =>
+                    setSelectedPoint({
+                      label: chartData.labels[index] || `Point ${index + 1}`,
+                      value,
+                    })
+                  }
                   style={styles.chart}
                 />
               </Card.Content>
             </Card>
-          ) : null}
+          ) : (
+            <Card style={styles.chartCard}>
+              <Card.Content style={styles.chartLoading}>
+                <Text style={styles.chartHint}>No sales trend data is available yet.</Text>
+              </Card.Content>
+            </Card>
+          )}
 
           <Text style={styles.sectionTitle}>Top Selling</Text>
           {topProducts.map((item) => (
@@ -236,18 +270,51 @@ export default function Analytics({ navigation }: any) {
             <Card.Content>
               <Text style={styles.insightTitle}>Smart Occasion Insights</Text>
               <Text style={styles.insightSubtext}>
-                Mention an event or local sale to get quick stocking suggestions.
+                Choose a festival quickly, or type your own only when you need a custom one.
               </Text>
 
-              <TextInput
-                mode="outlined"
-                placeholder="Example: Diwali, weekend sale, wedding season"
-                value={occasion}
-                onChangeText={setOccasion}
-                style={styles.input}
-                outlineColor={palette.border}
-                activeOutlineColor={palette.primary}
-              />
+              <Menu
+                visible={occasionMenuVisible}
+                onDismiss={() => setOccasionMenuVisible(false)}
+                anchor={
+                  <Button
+                    mode="outlined"
+                    textColor={palette.text}
+                    style={styles.dropdownButton}
+                    onPress={() => setOccasionMenuVisible(true)}
+                    icon="chevron-down"
+                    contentStyle={styles.dropdownContent}
+                  >
+                    {occasion}
+                  </Button>
+                }
+              >
+                {["Diwali", "Christmas", "Eid", "Others"].map((item) => (
+                  <Menu.Item
+                    key={item}
+                    title={item}
+                    onPress={() => {
+                      setOccasion(item);
+                      if (item !== "Others") {
+                        setCustomOccasion("");
+                      }
+                      setOccasionMenuVisible(false);
+                    }}
+                  />
+                ))}
+              </Menu>
+
+              {occasion === "Others" ? (
+                <TextInput
+                  mode="outlined"
+                  placeholder="Enter custom occasion"
+                  value={customOccasion}
+                  onChangeText={setCustomOccasion}
+                  style={styles.input}
+                  outlineColor={palette.border}
+                  activeOutlineColor={palette.primary}
+                />
+              ) : null}
 
               <Button
                 mode="contained"
@@ -256,6 +323,7 @@ export default function Analytics({ navigation }: any) {
                 style={styles.insightBtn}
                 icon="lightbulb-on-outline"
                 onPress={handleOccasionInsight}
+                disabled={occasion === "Others" && customOccasion.trim().length === 0}
               >
                 Get Suggestions
               </Button>
@@ -339,9 +407,32 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     ...shadow,
   },
+  chartSummary: {
+    marginBottom: spacing.sm,
+  },
+  chartSummaryLabel: {
+    color: palette.subtext,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  chartSummaryValue: {
+    color: palette.text,
+    fontSize: 26,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  chartHint: {
+    color: palette.subtext,
+    marginTop: 4,
+  },
+  chartLoading: {
+    minHeight: 220,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
   chart: {
     borderRadius: radii.md,
-    marginLeft: -12,
   },
   listCard: {
     backgroundColor: palette.surface,
@@ -398,6 +489,16 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: palette.surface,
     marginBottom: spacing.sm,
+  },
+  dropdownButton: {
+    borderRadius: radii.md,
+    justifyContent: "center",
+    marginBottom: spacing.sm,
+  },
+  dropdownContent: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    minHeight: 52,
   },
   insightBtn: {
     borderRadius: radii.md,

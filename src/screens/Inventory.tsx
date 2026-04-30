@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Modal,
   StyleSheet,
@@ -18,19 +19,13 @@ import { palette, radii, shadow, spacing } from "../theme/appTheme";
 
 const categories = ["All", "Dairy", "Bakery", "Fruits"];
 
-const data = [
-  { id: "1", name: "Milk", stock: 2, category: "Dairy", price: "Rs 58" },
-  { id: "2", name: "Bread", stock: 15, category: "Bakery", price: "Rs 42" },
-  { id: "3", name: "Apple", stock: 30, category: "Fruits", price: "Rs 120" },
-  { id: "4", name: "Butter", stock: 5, category: "Dairy", price: "Rs 76" },
-];
-
 export default function Inventory({ navigation }: any) {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [query, setQuery] = useState("");
   const [dialogVisible, setDialogVisible] = useState(false);
-  const [items, setItems] = useState<any[]>(data);
+  const [items, setItems] = useState<any[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiRequest<any>("/api/products")
@@ -51,7 +46,8 @@ export default function Inventory({ navigation }: any) {
           setItems(flattened);
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
 
   const filteredData = useMemo(() => {
@@ -73,7 +69,7 @@ export default function Inventory({ navigation }: any) {
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <FadeInView>
-            <Header navigation={navigation} notificationCount={3} />
+            <Header navigation={navigation} />
 
             <View style={styles.heroCard}>
               <View style={styles.heroCopy}>
@@ -179,6 +175,19 @@ export default function Inventory({ navigation }: any) {
             </FadeInView>
           );
         }}
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator color={palette.primary} />
+              <Text style={styles.emptyText}>Loading inventory...</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>No products found</Text>
+              <Text style={styles.emptyText}>Add stock to start tracking inventory here.</Text>
+            </View>
+          )
+        }
       />
 
       <FAB
@@ -453,6 +462,20 @@ const styles = StyleSheet.create({
   dialogActions: {
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: spacing.xl,
+    gap: spacing.sm,
+  },
+  emptyTitle: {
+    color: palette.text,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  emptyText: {
+    color: palette.subtext,
+    textAlign: "center",
   },
   sheetActionWrap: {
     flex: 1,

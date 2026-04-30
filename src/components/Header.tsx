@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { Text, Badge, Avatar } from "react-native-paper";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import ScalePressable from "./ScalePressable";
+import { apiRequest } from "../services/apiClient";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 
 type Props = {
@@ -13,8 +14,48 @@ type Props = {
 
 export default function Header({
   navigation,
-  notificationCount = 0,
+  notificationCount,
 }: Props) {
+  const [localNotificationCount, setLocalNotificationCount] = useState(0);
+
+  useEffect(() => {
+    if (typeof notificationCount === "number") {
+      return;
+    }
+
+    let active = true;
+
+    const loadNotificationCount = () => {
+      apiRequest<any>("/api/notifications")
+        .then((response) => {
+          if (!active || !Array.isArray(response.notifications)) {
+            return;
+          }
+
+          const unreadCount = response.notifications.filter(
+            (item: any) => item.isRead === false
+          ).length;
+          setLocalNotificationCount(unreadCount);
+        })
+        .catch(() => {
+          if (active) {
+            setLocalNotificationCount(0);
+          }
+        });
+    };
+
+    loadNotificationCount();
+    const unsubscribe = navigation.addListener("focus", loadNotificationCount);
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [navigation, notificationCount]);
+
+  const resolvedNotificationCount =
+    typeof notificationCount === "number" ? notificationCount : localNotificationCount;
+
   return (
     <View style={styles.container}>
       <ScalePressable onPress={() => navigation.navigate("Profile")} style={styles.profileWrap}>
@@ -40,7 +81,9 @@ export default function Header({
         >
           <View style={styles.iconButton}>
             <Ionicons name="notifications-outline" size={22} color={palette.text} />
-            {notificationCount > 0 ? <Badge style={styles.badge}>{notificationCount}</Badge> : null}
+            {resolvedNotificationCount > 0 ? (
+              <Badge style={styles.badge}>{resolvedNotificationCount}</Badge>
+            ) : null}
           </View>
         </ScalePressable>
       </View>

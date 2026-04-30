@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button, Card, Snackbar, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -7,15 +7,24 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import BarcodeScannerModal from "../components/BarcodeScannerModal";
 import FadeInView from "../components/FadeInView";
 import Header from "../components/Header";
-import { mockCatalog, type CatalogProduct } from "../data/mockCatalog";
 import { apiRequest } from "../services/apiClient";
+import { BILL_CREATED_EVENT, emitAppEvent } from "../services/appEvents";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 import {
   ensureCameraPermission,
   showCameraPermissionAlert,
 } from "../utils/cameraPermissions";
 
-type BillItem = CatalogProduct & {
+type ProductSuggestion = {
+  id: string;
+  barcode: string;
+  name: string;
+  price: number;
+  category: string;
+  quantity?: number;
+};
+
+type BillItem = ProductSuggestion & {
   qty: number;
 };
 
@@ -26,23 +35,93 @@ const categories = [
   { name: "Dairy", icon: "water-outline" },
 ];
 
-const initialBillItems: BillItem[] = [
-  { ...mockCatalog[0], qty: 2 },
-  { ...mockCatalog[1], qty: 1 },
-  { ...mockCatalog[2], qty: 1 },
-];
-
 export default function Billing({ navigation }: any) {
   const [qty, setQty] = useState("1");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [customerMobile, setCustomerMobile] = useState("");
   const [scannerVisible, setScannerVisible] = useState(false);
-  const [billItems, setBillItems] = useState<BillItem[]>(initialBillItems);
+  const [billItems, setBillItems] = useState<BillItem[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<ProductSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [submittingBill, setSubmittingBill] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
 
   const sanitizeBarcode = (value: string) => value.replace(/\D/g, "").trim();
   const sanitizeSearchText = (value: string) =>
     String(value || "").trim().replace(/[^\w\s./:-]/g, " ");
+  const sanitizeMobile = (value: string) => value.replace(/\D/g, "").slice(0, 10);
   const isValidBarcode = (value: string) => /^\d{8,13}$/.test(value);
+  const isValidMobileNumber = (value: string) => /^[6-9]\d{9}$/.test(sanitizeMobile(value));
+
+  useEffect(() => {
+    let active = true;
+
+    apiRequest<any>("/api/products")
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+
+        const grouped = response.productsByCategory || {};
+        const flattened = Object.values(grouped)
+          .flat()
+          .map((item: any) => ({
+            id: item._id || item.id,
+            barcode: item.barcode || "",
+            name: item.name,
+            price: Number(item.price || 0),
+            category: item.category || "Uncategorized",
+            quantity: Number(item.quantity || 0),
+          }));
+
+        setCatalogProducts(flattened);
+      })
+      .catch(() => {
+        if (active) {
+          setCatalogProducts([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(sanitizeSearchText(searchQuery));
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const query = debouncedQuery.trim();
+
+    if (!query) {
+      setSuggestions([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+
+    const normalizedQuery = query.toLowerCase();
+    const nextSuggestions = catalogProducts
+      .filter((item) => {
+        const nameMatch = item.name.toLowerCase().includes(normalizedQuery);
+        const barcodeMatch =
+          normalizedQuery.length > 0 && item.barcode.includes(normalizedQuery);
+
+        return nameMatch || barcodeMatch;
+      })
+      .slice(0, 8);
+
+    setSuggestions(nextSuggestions);
+    setSearching(false);
+  }, [catalogProducts, debouncedQuery]);
 
   const subtotal = useMemo(
     () => billItems.reduce((sum, item) => sum + item.price * item.qty, 0),
@@ -51,12 +130,15 @@ export default function Billing({ navigation }: any) {
   const tax = subtotal * 0.05;
   const total = subtotal + tax;
 
-  const addProductToBill = (product: CatalogProduct, quantity = 1) => {
+  const addProductToBill = (product: ProductSuggestion, quantity = 1) => {
     setBillItems((current) => {
-      const existing = current.find((item) => item.barcode === product.barcode);
+      const existing = current.find((item) =>
+        item.barcode ? item.barcode === product.barcode : item.id === product.id
+      );
+
       if (existing) {
         return current.map((item) =>
-          item.barcode === product.barcode
+          (item.barcode && item.barcode === product.barcode) || item.id === product.id
             ? { ...item, qty: item.qty + quantity }
             : item
         );
@@ -66,8 +148,8 @@ export default function Billing({ navigation }: any) {
     });
   };
 
-  const removeProductFromBill = (barcode: string) => {
-    setBillItems((current) => current.filter((item) => item.barcode !== barcode));
+  const removeProductFromBill = (itemId: string) => {
+    setBillItems((current) => current.filter((item) => item.id !== itemId));
   };
 
   const handleScanBarcode = async () => {
@@ -83,8 +165,6 @@ export default function Billing({ navigation }: any) {
   const handleBarcodeDetected = async (barcode: string) => {
     setScannerVisible(false);
     const normalizedBarcode = sanitizeBarcode(barcode);
-    console.log("Billing scanned barcode:", barcode);
-    console.log("Billing normalized barcode:", normalizedBarcode);
 
     if (!isValidBarcode(normalizedBarcode)) {
       setSnackbarMessage("Invalid barcode scanned. Please try again.");
@@ -92,95 +172,55 @@ export default function Billing({ navigation }: any) {
     }
 
     try {
-      const query = sanitizeBarcode(normalizedBarcode);
-      console.log("Billing outgoing scan query:", query);
       const response = await apiRequest<any>("/api/scan", {
         method: "POST",
-        body: { query },
+        body: { query: normalizedBarcode },
       });
-      console.log("Billing scan API response:", response);
 
-      if (response.found && response.product) {
-        addProductToBill({
-          id: response.product._id,
-          barcode: response.product.barcode,
-          name: response.product.name,
-          price: response.product.price,
-          category: response.product.category,
-        });
-        setSnackbarMessage(`${response.product.name} added to the bill.`);
+      if (!response.found || !response.product) {
+        setSnackbarMessage("Product not found for this barcode.");
         return;
       }
+
+      addProductToBill({
+        id: response.product._id,
+        barcode: response.product.barcode || "",
+        name: response.product.name,
+        price: Number(response.product.price || 0),
+        category: response.product.category || "Uncategorized",
+        quantity: Number(response.product.quantity || 0),
+      });
+      setSnackbarMessage(`${response.product.name} added to the bill.`);
     } catch (error) {
-      console.log("Billing scan API error:", error);
-      // Keep local catalog fallback available when the backend is unreachable.
+      setSnackbarMessage(
+        error instanceof Error ? error.message : "Unable to look up this barcode."
+      );
     }
+  };
 
-    const product = mockCatalog.find((item) => item.barcode === normalizedBarcode);
-    if (!product) {
-      setSnackbarMessage(`Barcode ${normalizedBarcode} was not found in the local catalog.`);
-      return;
-    }
-
-    addProductToBill(product);
+  const handleSelectSuggestion = (product: ProductSuggestion) => {
+    const quantity = Math.max(Number(qty) || 1, 1);
+    addProductToBill(product, quantity);
+    setSearchQuery("");
+    setSuggestions([]);
+    setQty("1");
     setSnackbarMessage(`${product.name} added to the bill.`);
   };
 
   const handleAddManualItem = () => {
     const quantity = Math.max(Number(qty) || 1, 1);
-    const query = sanitizeSearchText(searchQuery);
-    console.log("Billing outgoing manual search query:", query);
+    const selectedProduct = suggestions[0];
 
-    apiRequest<any>("/api/scan", {
-      method: "POST",
-      body: { query },
-    })
-      .then((response) => {
-        console.log("Billing manual search API response:", response);
+    if (!selectedProduct) {
+      setSnackbarMessage("No matching product found for manual add.");
+      return;
+    }
 
-        if (response.found && response.product) {
-          addProductToBill(
-            {
-              id: response.product._id,
-              barcode: response.product.barcode,
-              name: response.product.name,
-              price: response.product.price,
-              category: response.product.category,
-            },
-            quantity
-          );
-          setSnackbarMessage(`${response.product.name} added manually.`);
-          return;
-        }
-
-        const trimmedQuery = query.toLowerCase();
-        const selectedProduct = mockCatalog.find((item) =>
-          item.name.toLowerCase().includes(trimmedQuery)
-        );
-
-        if (!selectedProduct) {
-          setSnackbarMessage("No matching product found for manual add.");
-          return;
-        }
-
-        addProductToBill(selectedProduct, quantity);
-        setSnackbarMessage(`${selectedProduct.name} added manually.`);
-      })
-      .catch((error) => {
-        console.log("Billing manual search API error:", error);
-        const trimmedQuery = query.toLowerCase();
-        const selectedProduct = mockCatalog.find((item) =>
-          item.name.toLowerCase().includes(trimmedQuery)
-        );
-
-        if (!selectedProduct) {
-          setSnackbarMessage("No matching product found for manual add.");
-          return;
-        }
-
-        addProductToBill(selectedProduct, quantity);
-        setSnackbarMessage(`${selectedProduct.name} added manually.`);
-      });
+    addProductToBill(selectedProduct, quantity);
+    setSearchQuery("");
+    setSuggestions([]);
+    setQty("1");
+    setSnackbarMessage(`${selectedProduct.name} added to the bill.`);
   };
 
   const handleGenerateBill = async () => {
@@ -189,43 +229,73 @@ export default function Billing({ navigation }: any) {
       return;
     }
 
+    if (!isValidMobileNumber(customerMobile)) {
+      setSnackbarMessage("Enter a valid 10-digit mobile number.");
+      return;
+    }
+
     try {
+      setSubmittingBill(true);
       const requestBody = {
         taxRate: 0.05,
+        customerMobile: sanitizeMobile(customerMobile),
         items: billItems.map((item) => ({
+          productId: item.id,
           barcode: sanitizeBarcode(item.barcode),
           name: item.name.trim(),
           price: item.price,
           quantity: item.qty,
         })),
       };
-      console.log("Billing create bill request:", requestBody);
-      await apiRequest<any>("/api/bills", {
+
+      const response = await apiRequest<any>("/api/bills", {
         method: "POST",
         body: requestBody,
       });
-      setSnackbarMessage("Bill generated successfully.");
+
+      emitAppEvent(BILL_CREATED_EVENT);
+      const whatsappResults = Array.isArray(response.whatsapp?.results)
+        ? response.whatsapp.results
+        : [];
+      const successfulDeliveries = whatsappResults.filter((item: any) => item.sent);
+
+      setBillItems([]);
+      setCustomerMobile("");
+      setSearchQuery("");
+      setSuggestions([]);
+      setQty("1");
+      setSnackbarMessage(
+        successfulDeliveries.length === 2
+          ? "Bill generated and sent to WhatsApp."
+          : successfulDeliveries.length > 0
+          ? "Bill generated. Some WhatsApp deliveries failed."
+          : "Failed to send WhatsApp message."
+      );
     } catch (error) {
-      console.log("Billing create bill error:", error);
       setSnackbarMessage(
         error instanceof Error ? error.message : "Unable to generate bill."
       );
+    } finally {
+      setSubmittingBill(false);
     }
   };
+
+  const shouldShowNoProducts =
+    debouncedQuery.trim().length > 0 && !searching && suggestions.length === 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <FadeInView>
-          <Header navigation={navigation} notificationCount={3} />
+          <Header navigation={navigation} />
 
           <View style={styles.heroCard}>
             <View style={styles.heroCopy}>
               <Text style={styles.heroEyebrow}>BILLING DESK</Text>
               <Text style={styles.heroTitle}>Scan barcodes and build bills faster</Text>
               <Text style={styles.heroText}>
-                Barcode scanning adds known products directly to the bill and falls
-                back safely when the code is missing from the catalog.
+                Search products instantly, keep the bill clean, and send receipts
+                directly on WhatsApp after checkout.
               </Text>
             </View>
             <View style={styles.heroIcon}>
@@ -273,6 +343,40 @@ export default function Billing({ navigation }: any) {
                 left={<TextInput.Icon icon="magnify" />}
               />
 
+              {searching ? (
+                <Text style={styles.helperText}>Searching products...</Text>
+              ) : null}
+
+              {!searching && suggestions.length > 0 ? (
+                <View style={styles.suggestionList}>
+                  {suggestions.map((item) => (
+                    <Card
+                      key={item.id}
+                      style={styles.suggestionCard}
+                      onPress={() => handleSelectSuggestion(item)}
+                    >
+                      <Card.Content style={styles.suggestionContent}>
+                        <View style={styles.suggestionCopy}>
+                          <Text style={styles.suggestionTitle}>{item.name}</Text>
+                          <Text style={styles.suggestionMeta}>
+                            {item.category} . Rs {item.price.toFixed(2)}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name="add-circle-outline"
+                          size={20}
+                          color={palette.primary}
+                        />
+                      </Card.Content>
+                    </Card>
+                  ))}
+                </View>
+              ) : null}
+
+              {shouldShowNoProducts ? (
+                <Text style={styles.helperText}>No products found</Text>
+              ) : null}
+
               <TextInput
                 mode="outlined"
                 label="Quantity"
@@ -284,6 +388,22 @@ export default function Billing({ navigation }: any) {
                 style={styles.input}
                 left={<TextInput.Icon icon="numeric" />}
               />
+
+              <TextInput
+                mode="outlined"
+                label="Mobile Number"
+                value={customerMobile}
+                onChangeText={(value) => setCustomerMobile(sanitizeMobile(value))}
+                keyboardType="phone-pad"
+                outlineColor={palette.border}
+                activeOutlineColor={palette.primary}
+                style={styles.input}
+                left={<TextInput.Icon icon="phone-outline" />}
+                error={customerMobile.length > 0 && !isValidMobileNumber(customerMobile)}
+              />
+              <Text style={styles.helperText}>
+                Bill will be sent to both the customer and owner WhatsApp numbers.
+              </Text>
 
               <Button
                 mode="contained"
@@ -321,42 +441,62 @@ export default function Billing({ navigation }: any) {
               <View style={styles.billHeader}>
                 <View>
                   <Text style={styles.billTitle}>Current Bill</Text>
-                  <Text style={styles.billMeta}>TXN-99812</Text>
+                  <Text style={styles.billMeta}>
+                    {billItems.length === 0
+                      ? "Start by scanning or searching a product"
+                      : `${billItems.length} item${billItems.length === 1 ? "" : "s"} added`}
+                  </Text>
                 </View>
                 <View style={styles.billBadge}>
                   <Ionicons name="flash-outline" size={16} color={palette.white} />
-                  <Text style={styles.billBadgeText}>Active</Text>
+                  <Text style={styles.billBadgeText}>
+                    {billItems.length === 0 ? "Empty" : "Active"}
+                  </Text>
                 </View>
               </View>
 
-              <FlatList
-                data={billItems}
-                keyExtractor={(item) => item.id}
-                scrollEnabled={false}
-                renderItem={({ item }) => (
-                  <View style={styles.item}>
-                    <View style={styles.itemContent}>
-                      <Text style={styles.itemName}>{item.name}</Text>
-                      <Text style={styles.itemQty}>
-                        Qty {item.qty} . Rs {item.price.toFixed(2)}
-                      </Text>
+              {billItems.length === 0 ? (
+                <View style={styles.emptyBillState}>
+                  <Ionicons
+                    name="receipt-outline"
+                    size={26}
+                    color="rgba(255,255,255,0.75)"
+                  />
+                  <Text style={styles.emptyBillTitle}>Billing starts empty now</Text>
+                  <Text style={styles.emptyBillText}>
+                    Search or scan a product to build the current bill.
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={billItems}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                  renderItem={({ item }) => (
+                    <View style={styles.item}>
+                      <View style={styles.itemContent}>
+                        <Text style={styles.itemName}>{item.name}</Text>
+                        <Text style={styles.itemQty}>
+                          Qty {item.qty} . Rs {item.price.toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={styles.itemActions}>
+                        <Text style={styles.itemPrice}>
+                          Rs {(item.price * item.qty).toFixed(2)}
+                        </Text>
+                        <Button
+                          compact
+                          mode="text"
+                          textColor={palette.white}
+                          onPress={() => removeProductFromBill(item.id)}
+                        >
+                          Remove
+                        </Button>
+                      </View>
                     </View>
-                    <View style={styles.itemActions}>
-                      <Text style={styles.itemPrice}>
-                        Rs {(item.price * item.qty).toFixed(2)}
-                      </Text>
-                      <Button
-                        compact
-                        mode="text"
-                        textColor={palette.white}
-                        onPress={() => removeProductFromBill(item.barcode)}
-                      >
-                        Remove
-                      </Button>
-                    </View>
-                  </View>
-                )}
-              />
+                  )}
+                />
+              )}
 
               <View style={styles.totalsRow}>
                 <Text style={styles.totalLabel}>Subtotal</Text>
@@ -378,8 +518,10 @@ export default function Billing({ navigation }: any) {
                 style={styles.generateBtn}
                 icon="receipt-text-check-outline"
                 onPress={handleGenerateBill}
+                loading={submittingBill}
+                disabled={submittingBill}
               >
-                Generate Bill
+                {submittingBill ? "Sending Bill..." : "Generate Bill"}
               </Button>
             </Card.Content>
           </Card>
@@ -506,6 +648,35 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     marginBottom: spacing.sm,
   },
+  helperText: {
+    color: palette.subtext,
+    marginBottom: spacing.sm,
+  },
+  suggestionList: {
+    marginBottom: spacing.sm,
+  },
+  suggestionCard: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radii.md,
+    marginBottom: spacing.xs,
+  },
+  suggestionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  suggestionCopy: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  suggestionTitle: {
+    color: palette.text,
+    fontWeight: "700",
+  },
+  suggestionMeta: {
+    color: palette.subtext,
+    marginTop: 2,
+  },
   addBtn: {
     marginTop: spacing.xs,
     borderRadius: radii.md,
@@ -572,6 +743,25 @@ const styles = StyleSheet.create({
     color: palette.white,
     fontWeight: "700",
     fontSize: 12,
+  },
+  emptyBillState: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  emptyBillTitle: {
+    color: palette.white,
+    fontWeight: "700",
+    fontSize: 16,
+    marginTop: spacing.sm,
+  },
+  emptyBillText: {
+    color: "#d1fae5",
+    textAlign: "center",
+    marginTop: spacing.xs,
+    lineHeight: 18,
   },
   item: {
     backgroundColor: "rgba(255,255,255,0.1)",

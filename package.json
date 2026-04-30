@@ -21,7 +21,6 @@
     "react-native-gesture-handler": "^2.31.1",
     "react-native-image-picker": "^8.2.1",
     "react-native-nitro-image": "^0.13.1",
-    "react-native-nitro-modules": "^0.35.5",
     "react-native-paper": "^5.15.1",
     "react-native-reanimated": "^4.3.0",
     "react-native-safe-area-context": "^5.7.0",
@@ -30,7 +29,9 @@
     "react-native-vector-icons": "^10.3.0",
     "react-native-vision-camera": "^5.0.6",
     "react-native-vision-camera-barcode-scanner": "^5.0.6",
-    "react-native-worklets": "^0.8.1"
+    "react-native-worklets": "^0.8.1",
+    "react-native-nitro-modules": "^0.35.6"
+
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

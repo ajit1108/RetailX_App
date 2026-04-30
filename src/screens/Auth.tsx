@@ -30,6 +30,10 @@ export default function Auth({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
 
   const handleAuth = async () => {
+    if (loading) {
+      return;
+    }
+
     try {
       setLoading(true);
       console.log("Auth request start:", isLogin ? "login" : "register");
@@ -155,7 +159,7 @@ export default function Auth({ navigation }: Props) {
                     color={palette.white}
                   />
                   <Text style={styles.primaryActionText}>
-                    {loading ? "Please wait..." : isLogin ? "Sign In" : "Sign Up"}
+                    {loading ? "Signing in..." : isLogin ? "Sign In" : "Sign Up"}
                   </Text>
                 </View>
               </ScalePressable>

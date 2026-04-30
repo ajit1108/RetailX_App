@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Switch, View } from "react-native";
-import { Card, Divider, Text } from "react-native-paper";
+import { Linking, ScrollView, StyleSheet, Switch, View } from "react-native";
+import { Button, Card, Divider, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
@@ -61,6 +61,10 @@ export default function Settings({ navigation }: any) {
         autoSaveReceipts: nextEnabled.receipts,
       },
     }).catch(() => undefined);
+  };
+
+  const handleOpenLink = (url: string) => {
+    Linking.openURL(url).catch(() => undefined);
   };
 
   return (
@@ -127,7 +131,48 @@ export default function Settings({ navigation }: any) {
 
           <Card style={styles.sectionCard}>
             <Card.Content>
-              <Text style={styles.sectionTitle}>Support</Text>
+              <Text style={styles.sectionTitle}>Help & Support</Text>
+              <View style={styles.supportCard}>
+                <Text style={styles.supportTitle}>Contact</Text>
+                <Text style={styles.supportText}>Email: support@retailx.com</Text>
+                <Text style={styles.supportText}>Phone: +91 98765 43210</Text>
+                <View style={styles.supportActionRow}>
+                  <Button
+                    mode="outlined"
+                    textColor={palette.primaryDark}
+                    style={styles.supportButton}
+                    onPress={() => handleOpenLink("mailto:support@retailx.com")}
+                  >
+                    Email Support
+                  </Button>
+                  <Button
+                    mode="outlined"
+                    textColor={palette.primaryDark}
+                    style={styles.supportButton}
+                    onPress={() => handleOpenLink("tel:+919876543210")}
+                  >
+                    Call Now
+                  </Button>
+                </View>
+              </View>
+
+              <View style={styles.supportCard}>
+                <Text style={styles.supportTitle}>FAQ</Text>
+                <Text style={styles.faqQuestion}>How do I send bills on WhatsApp?</Text>
+                <Text style={styles.supportText}>
+                  Add products to the bill, enter the customer mobile number, and
+                  generate the bill to send it to both customer and owner.
+                </Text>
+                <Text style={styles.faqQuestion}>Why is a product not appearing in search?</Text>
+                <Text style={styles.supportText}>
+                  Check that the product exists in inventory and try a partial keyword or barcode.
+                </Text>
+                <Text style={styles.faqQuestion}>What happens if WhatsApp delivery fails?</Text>
+                <Text style={styles.supportText}>
+                  Billing still completes, and you will see a delivery failure message instead of losing the bill.
+                </Text>
+              </View>
+
               <ScalePressable style={styles.linkRow}>
                 <View style={styles.linkInner}>
                   <Ionicons name="help-circle-outline" size={20} color={palette.primaryDark} />
@@ -143,6 +188,17 @@ export default function Settings({ navigation }: any) {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={palette.subtext} />
               </ScalePressable>
+
+              <Button
+                mode="contained"
+                buttonColor={palette.primary}
+                textColor={palette.white}
+                style={styles.reportButton}
+                icon="alert-circle-outline"
+                onPress={() => handleOpenLink("mailto:support@retailx.com?subject=RetailX%20Issue")}
+              >
+                Report Issue
+              </Button>
             </Card.Content>
           </Card>
         </FadeInView>
@@ -267,6 +323,36 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: spacing.sm,
   },
+  supportCard: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  supportTitle: {
+    color: palette.text,
+    fontWeight: "700",
+    marginBottom: spacing.xs,
+  },
+  supportText: {
+    color: palette.subtext,
+    lineHeight: 19,
+    marginTop: 2,
+  },
+  faqQuestion: {
+    color: palette.primaryDark,
+    fontWeight: "700",
+    marginTop: spacing.sm,
+  },
+  supportActionRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  supportButton: {
+    flex: 1,
+    borderRadius: radii.md,
+  },
   linkRow: {
     borderRadius: radii.md,
     marginBottom: spacing.sm,
@@ -279,5 +365,9 @@ const styles = StyleSheet.create({
   linkText: {
     color: palette.text,
     fontWeight: "600",
+  },
+  reportButton: {
+    marginTop: spacing.xs,
+    borderRadius: radii.md,
   },
 });

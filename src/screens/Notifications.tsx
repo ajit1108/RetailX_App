@@ -15,32 +15,11 @@ type Notification = {
   message: string;
   time: string;
   icon: string;
+  isRead: boolean;
 };
 
 export default function Notifications({ navigation }: any) {
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: "1",
-      title: "Low Stock Alert",
-      message: "Milk stock is below 5 units.",
-      time: "2 min ago",
-      icon: "warning-outline",
-    },
-    {
-      id: "2",
-      title: "New Sale",
-      message: "Rs 1500 sale recorded today.",
-      time: "10 min ago",
-      icon: "cash-outline",
-    },
-    {
-      id: "3",
-      title: "Prediction Insight",
-      message: "Stock snacks for the upcoming weekend rush.",
-      time: "1 hr ago",
-      icon: "sparkles-outline",
-    },
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const badgeScale = useRef(new Animated.Value(1)).current;
 
@@ -55,12 +34,15 @@ export default function Notifications({ navigation }: any) {
               message: item.message,
               time: new Date(item.createdAt).toLocaleString(),
               icon: item.icon || "notifications-outline",
+              isRead: Boolean(item.isRead),
             }))
           );
         }
       })
       .catch(() => undefined);
   }, []);
+
+  const unreadCount = notifications.filter((item) => !item.isRead).length;
 
   const animateBadge = () => {
     Animated.sequence([
@@ -96,7 +78,7 @@ export default function Notifications({ navigation }: any) {
           <Text style={styles.headerTitle}>Notifications</Text>
 
           <Animated.View style={[styles.badgeWrap, { transform: [{ scale: badgeScale }] }]}>
-            <Badge style={styles.badge}>{notifications.length}</Badge>
+            <Badge style={styles.badge}>{unreadCount}</Badge>
           </Animated.View>
         </View>
 

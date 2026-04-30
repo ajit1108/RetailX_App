@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { BottomNavigation } from "react-native-paper";
 import { StyleSheet } from "react-native";
 
@@ -11,47 +11,53 @@ import { palette, shadow } from "../theme/appTheme";
 export default function BottomTabs({ navigation }: any) {
   const [index, setIndex] = useState(0);
 
-  const routes = [
-    {
-      key: "home",
-      title: "Home",
-      focusedIcon: "home-outline",
-      unfocusedIcon: "home-outline",
-    },
-    {
-      key: "inventory",
-      title: "Inventory",
-      focusedIcon: "cube-outline",
-      unfocusedIcon: "cube-outline",
-    },
-    {
-      key: "billing",
-      title: "Billing",
-      focusedIcon: "receipt-outline",
-      unfocusedIcon: "receipt-outline",
-    },
-    {
-      key: "analytics",
-      title: "Analytics",
-      focusedIcon: "bar-chart-outline",
-      unfocusedIcon: "bar-chart-outline",
-    },
-  ];
+  const routes = useMemo(
+    () => [
+      {
+        key: "home",
+        title: "Home",
+        focusedIcon: "home-outline",
+        unfocusedIcon: "home-outline",
+      },
+      {
+        key: "inventory",
+        title: "Inventory",
+        focusedIcon: "cube-outline",
+        unfocusedIcon: "cube-outline",
+      },
+      {
+        key: "billing",
+        title: "Billing",
+        focusedIcon: "receipt-outline",
+        unfocusedIcon: "receipt-outline",
+      },
+      {
+        key: "analytics",
+        title: "Analytics",
+        focusedIcon: "bar-chart-outline",
+        unfocusedIcon: "bar-chart-outline",
+      },
+    ],
+    []
+  );
 
-  const renderScene = ({ route }: any) => {
-    switch (route.key) {
-      case "home":
-        return <Home navigation={navigation} />;
-      case "inventory":
-        return <Inventory navigation={navigation} />;
-      case "billing":
-        return <Billing navigation={navigation} />;
-      case "analytics":
-        return <Analytics navigation={navigation} />;
-      default:
-        return null;
-    }
-  };
+  const renderScene = useCallback(
+    ({ route }: any) => {
+      switch (route.key) {
+        case "home":
+          return <Home navigation={navigation} />;
+        case "inventory":
+          return <Inventory navigation={navigation} />;
+        case "billing":
+          return <Billing navigation={navigation} />;
+        case "analytics":
+          return <Analytics navigation={navigation} />;
+        default:
+          return null;
+      }
+    },
+    [navigation]
+  );
 
   return (
     <BottomNavigation
