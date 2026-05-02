@@ -1,6 +1,9 @@
 import React from "react";
 import { Image, type ImageStyle, type StyleProp } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
+import ioniconGlyphMap from "react-native-vector-icons/glyphmaps/Ionicons.json";
+
+const validIoniconNames = new Set(Object.keys(ioniconGlyphMap));
 
 const iconNameMap: Record<string, string> = {
   "home-outline": "home-outline",
@@ -23,6 +26,8 @@ const iconNameMap: Record<string, string> = {
   logout: "log-out-outline",
   plus: "add",
   "eye-outline": "eye-outline",
+  "phone-outline": "call-outline",
+  "calendar-month-outline": "calendar-outline",
   "trash-outline": "trash-outline",
 };
 
@@ -48,7 +53,8 @@ export default function AppIcon({
   }
 
   if (typeof resolvedSource === "string") {
-    const iconName = iconNameMap[resolvedSource] ?? "help-circle-outline";
+    const iconName = iconNameMap[resolvedSource]
+      ?? (validIoniconNames.has(resolvedSource) ? resolvedSource : "help-circle-outline");
     return <Ionicons name={iconName as any} size={size} color={color} />;
   }
 

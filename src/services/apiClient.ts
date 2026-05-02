@@ -9,16 +9,17 @@ type ApiOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: Record<string, any>;
   auth?: boolean;
+  cache?: boolean;
 };
 
 export async function apiRequest<T>(
   path: string,
-  { method = "GET", body, auth = true }: ApiOptions = {}
+  { method = "GET", body, auth = true, cache = true }: ApiOptions = {}
 ): Promise<T> {
   const cacheKey = `${method}:${path}`;
   const now = Date.now();
 
-  if (method === "GET") {
+  if (method === "GET" && cache) {
     const cached = responseCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
       return cached.data as T;
@@ -70,7 +71,7 @@ export async function apiRequest<T>(
     return data as T;
   };
 
-  if (method !== "GET") {
+  if (method !== "GET" || !cache) {
     return executeRequest();
   }
 

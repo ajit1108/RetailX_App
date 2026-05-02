@@ -10,6 +10,17 @@ import { apiRequest } from "../services/apiClient";
 import { BILL_CREATED_EVENT, subscribeToAppEvent } from "../services/appEvents";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 
+const getAlertIcon = (type?: string) => {
+  switch (type) {
+    case "low_stock":
+      return "warning-outline";
+    case "expiry":
+      return "time-outline";
+    default:
+      return "alert-circle-outline";
+  }
+};
+
 const overviewCards = [
   {
     title: "Total Sales Today",
@@ -19,10 +30,10 @@ const overviewCards = [
     accent: palette.success,
   },
   {
-    title: "Items Scanned",
+    title: "Items Sold Today",
     value: "142",
-    change: "Busy period . Last scan 4m ago",
-    icon: "barcode-outline",
+    change: "Track today's billing movement",
+    icon: "cart-outline",
     accent: palette.accent,
   },
 ];
@@ -64,7 +75,7 @@ export default function Dashboard({ navigation }: any) {
     const loadDashboard = () => {
       setLoading(true);
 
-      apiRequest<any>("/api/dashboard")
+      apiRequest<any>("/api/dashboard", { cache: false })
         .then((response) => {
           if (active) {
             setDashboard(response);
@@ -89,20 +100,22 @@ export default function Dashboard({ navigation }: any) {
     };
   }, [navigation]);
 
+  const summary = dashboard?.summary ?? null;
+
   const cards = dashboard
     ? [
         {
           title: "Total Sales Today",
-          value: `Rs ${Number(dashboard.summary?.todaySales || 0).toFixed(2)}`,
-          change: `${dashboard.summary?.todayBillCount || 0} bills today`,
+          value: `Rs ${Number(summary?.todaySales || 0).toFixed(2)}`,
+          change: `${summary?.todayBillCount || 0} bills completed today`,
           icon: "trending-up-outline",
           accent: palette.success,
         },
         {
-          title: "Items Scanned",
-          value: String(dashboard.summary?.todayItemsSold || 0),
-          change: `${dashboard.summary?.totalProducts || 0} products in stock`,
-          icon: "barcode-outline",
+          title: "Items Sold Today",
+          value: String(summary?.todayItemsSold || 0),
+          change: `${summary?.totalProducts || 0} products currently in stock`,
+          icon: "cart-outline",
           accent: palette.accent,
         },
       ]
@@ -111,14 +124,14 @@ export default function Dashboard({ navigation }: any) {
     ? dashboard.priorityAlerts.map((item: any) => ({
         title: item.title,
         subtitle: item.message,
-        icon: "warning-outline",
-        color: palette.danger,
+        icon: getAlertIcon(item.type),
+        color: item.type === "expiry" ? palette.warning : palette.danger,
       }))
     : alerts;
   const topItems = dashboard?.topPerformingItems?.length
     ? dashboard.topPerformingItems.map((item: any, index: number) => ({
         title: item.name,
-        subtitle: `${item.totalSold} units sold today`,
+        subtitle: `Sold ${item.totalSold} units • Rs ${Number(item.revenue || 0).toFixed(2)}`,
         tag: index === 0 ? "Best seller" : "Active",
       }))
     : performers;
@@ -140,8 +153,9 @@ export default function Dashboard({ navigation }: any) {
               <Text style={styles.heroEyebrow}>STORE SNAPSHOT</Text>
               <Text style={styles.heroTitle}>Your shop is moving well today</Text>
               <Text style={styles.heroSubtitle}>
-                Sales are healthy, inventory needs attention, and billing is ready
-                for the next rush.
+                {summary
+                  ? `${summary.todayBillCount || 0} bills generated, ${summary.todayItemsSold || 0} items sold, and ${summary.lowStockCount || 0} products need attention.`
+                  : "Sales are healthy, inventory needs attention, and billing is ready for the next rush."}
               </Text>
             </View>
             <View style={styles.heroIconWrap}>
@@ -214,7 +228,7 @@ export default function Dashboard({ navigation }: any) {
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Top Performing Items</Text>
-            <Text style={styles.sectionMeta}>This week</Text>
+            <Text style={styles.sectionMeta}>Today</Text>
           </View>
 
           {(loading ? [] : topItems).map((item: any, index: number) => (
@@ -249,7 +263,7 @@ export default function Dashboard({ navigation }: any) {
                 </Text>
               </View>
               <Ionicons
-                name={index === 0 ? "sparkles-outline" : "trending-up-outline"}
+                name={index === 0 ? "trophy-outline" : "trending-up-outline"}
                 size={22}
                 color={index === 0 ? palette.white : palette.primary}
               />

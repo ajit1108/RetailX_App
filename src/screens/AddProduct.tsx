@@ -1,5 +1,8 @@
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import React, { useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button, Card, Snackbar, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -22,6 +25,8 @@ export default function AddProduct({ navigation }: any) {
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
+  const [selectedExpiryDate, setSelectedExpiryDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [detectedText, setDetectedText] = useState("");
   const [barcode, setBarcode] = useState("");
   const [scanLoading, setScanLoading] = useState(false);
@@ -32,6 +37,65 @@ export default function AddProduct({ navigation }: any) {
   const sanitizeSearchText = (value: string) =>
     String(value || "").trim().replace(/[^\w\s./:-]/g, " ");
   const isValidBarcode = (value: string) => /^\d{8,13}$/.test(value);
+  const formatDateValue = (value: Date) => {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+  const parseExpiryDate = (value: string) => {
+    const trimmedValue = String(value || "").trim();
+
+    if (!trimmedValue) {
+      return null;
+    }
+
+    const slashMatch = trimmedValue.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (slashMatch) {
+      const [, dayText, monthText, yearText] = slashMatch;
+      const year =
+        yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText);
+      const month = Number(monthText) - 1;
+      const day = Number(dayText);
+      const parsed = new Date(year, month, day);
+
+      if (
+        parsed.getFullYear() === year &&
+        parsed.getMonth() === month &&
+        parsed.getDate() === day
+      ) {
+        return parsed;
+      }
+    }
+
+    const parsed = new Date(trimmedValue);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+  const normalizeExpiryDate = (value: string) => {
+    const parsed = parseExpiryDate(value);
+    return parsed ? formatDateValue(parsed) : String(value || "").trim();
+  };
+  const openDatePicker = () => {
+    const parsed = parseExpiryDate(expiryDate);
+    setSelectedExpiryDate(parsed || new Date());
+    setShowDatePicker(true);
+  };
+  const handleExpiryDateChange = (
+    event: DateTimePickerEvent,
+    nextDate?: Date
+  ) => {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+    }
+
+    if (event.type === "dismissed" || !nextDate) {
+      return;
+    }
+
+    setSelectedExpiryDate(nextDate);
+    setExpiryDate(formatDateValue(nextDate));
+  };
 
   const handleScanText = async () => {
     const granted = await ensureCameraPermission();
@@ -71,7 +135,12 @@ export default function AddProduct({ navigation }: any) {
       }
 
       if (result.parsed.expiryDate) {
-        setExpiryDate(result.parsed.expiryDate);
+        const normalizedExpiryDate = normalizeExpiryDate(result.parsed.expiryDate);
+        const parsedExpiryDate = parseExpiryDate(normalizedExpiryDate);
+        setExpiryDate(normalizedExpiryDate);
+        if (parsedExpiryDate) {
+          setSelectedExpiryDate(parsedExpiryDate);
+        }
       }
 
       if (
@@ -181,7 +250,7 @@ export default function AddProduct({ navigation }: any) {
         quantity: Number(quantity) || 0,
         price: Number(price) || 0,
         category: sanitizeSearchText(category),
-        expiryDate: expiryDate.trim(),
+        expiryDate: normalizeExpiryDate(expiryDate),
       };
       console.log("AddProduct save request:", requestBody);
       await apiRequest<any>("/api/products", {
@@ -338,11 +407,30 @@ export default function AddProduct({ navigation }: any) {
                 label="Expiry Date"
                 mode="outlined"
                 value={expiryDate}
-                onChangeText={setExpiryDate}
+                placeholder="YYYY-MM-DD"
                 style={styles.input}
                 outlineColor={palette.border}
                 activeOutlineColor={palette.primary}
+                showSoftInputOnFocus={false}
+                onFocus={openDatePicker}
+                onPressIn={openDatePicker}
+                right={
+                  <TextInput.Icon
+                    icon="calendar-month-outline"
+                    onPress={openDatePicker}
+                  />
+                }
               />
+
+              {showDatePicker ? (
+                <DateTimePicker
+                  value={selectedExpiryDate}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  minimumDate={new Date()}
+                  onChange={handleExpiryDateChange}
+                />
+              ) : null}
 
               {detectedText ? (
                 <View style={styles.detectedCard}>
