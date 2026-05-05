@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Modal,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -15,6 +16,7 @@ import FadeInView from "../components/FadeInView";
 import Header from "../components/Header";
 import ScalePressable from "../components/ScalePressable";
 import { apiRequest } from "../services/apiClient";
+import { PRODUCT_SAVED_EVENT, subscribeToAppEvent } from "../services/appEvents";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 
 const categories = ["All", "Dairy", "Bakery", "Fruits"];
@@ -26,9 +28,17 @@ export default function Inventory({ navigation }: any) {
   const [items, setItems] = useState<any[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    apiRequest<any>("/api/products")
+  const loadInventory = useCallback(
+    async ({ isRefreshing = false }: { isRefreshing?: boolean } = {}) => {
+      if (isRefreshing) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      await apiRequest<any>("/api/products", { cache: false })
       .then((response) => {
         const grouped = response.productsByCategory || {};
         const flattened = Object.values(grouped)
@@ -42,13 +52,31 @@ export default function Inventory({ navigation }: any) {
             expiry: product.expiryDate,
           }));
 
-        if (flattened.length > 0) {
-          setItems(flattened);
-        }
+        setItems(flattened);
       })
       .catch(() => undefined)
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => {
+        if (isRefreshing) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadInventory();
+
+    const unsubscribeProductSaved = subscribeToAppEvent(PRODUCT_SAVED_EVENT, () => {
+      loadInventory();
+    });
+
+    return () => {
+      unsubscribeProductSaved();
+    };
+  }, [loadInventory]);
 
   const filteredData = useMemo(() => {
     return items.filter((item) => {
@@ -67,6 +95,14 @@ export default function Inventory({ navigation }: any) {
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadInventory({ isRefreshing: true })}
+            tintColor={palette.primary}
+            colors={[palette.primary]}
+          />
+        }
         ListHeaderComponent={
           <FadeInView>
             <Header navigation={navigation} />

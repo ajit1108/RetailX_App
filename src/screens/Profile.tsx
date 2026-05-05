@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { Avatar, Button, Card, Text, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -16,17 +16,34 @@ export default function Profile({ navigation }: any) {
   const [shop, setShop] = useState("RetailX Store");
   const [mobile, setMobile] = useState("9876543210");
   const [email, setEmail] = useState("test@gmail.com");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadProfile = useCallback(
+    async ({ isRefreshing = false }: { isRefreshing?: boolean } = {}) => {
+      if (isRefreshing) {
+        setRefreshing(true);
+      }
+
+      await apiRequest<any>("/api/users/me", { cache: false })
+      .then((response) => {
+        setName((current) => response.user?.name || current);
+        setShop((current) => response.user?.shopName || current);
+        setMobile((current) => response.user?.mobile || current);
+        setEmail((current) => response.user?.email || current);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (isRefreshing) {
+          setRefreshing(false);
+        }
+      });
+    },
+    []
+  );
 
   useEffect(() => {
-    apiRequest<any>("/api/users/me")
-      .then((response) => {
-        setName(response.user?.name || name);
-        setShop(response.user?.shopName || shop);
-        setMobile(response.user?.mobile || mobile);
-        setEmail(response.user?.email || email);
-      })
-      .catch(() => undefined);
-  }, []);
+    loadProfile();
+  }, [loadProfile]);
 
   const handleSaveProfile = async () => {
     if (!editing) {
@@ -52,14 +69,25 @@ export default function Profile({ navigation }: any) {
     }
   };
 
-  const handleLogout = () => {
-    clearAuthSession();
+  const handleLogout = async () => {
+    await clearAuthSession();
     navigation.replace("Auth");
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadProfile({ isRefreshing: true })}
+            tintColor={palette.primary}
+            colors={[palette.primary]}
+          />
+        }
+      >
         <FadeInView>
           <View style={styles.header}>
             <ScalePressable onPress={() => navigation.goBack()} style={styles.iconWrap}>

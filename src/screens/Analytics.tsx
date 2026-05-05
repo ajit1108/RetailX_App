@@ -1,5 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Button, Card, Menu, SegmentedButtons, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -37,6 +44,7 @@ export default function Analytics({ navigation }: any) {
     "Snacks and beverages",
   ]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [chartWidth, setChartWidth] = useState(0);
   const [selectedPoint, setSelectedPoint] = useState<{
     label: string;
@@ -71,8 +79,15 @@ export default function Analytics({ navigation }: any) {
     return { labels, values: salesData };
   }, [labels, range, salesData]);
 
-  useEffect(() => {
-    apiRequest<any>("/api/analytics")
+  const loadAnalytics = useCallback(
+    async ({ isRefreshing = false }: { isRefreshing?: boolean } = {}) => {
+      if (isRefreshing) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      await apiRequest<any>("/api/analytics", { cache: false })
       .then((response) => {
         if (response.weeklySales) {
           const nextLabels = response.weeklySales.labels || [];
@@ -103,8 +118,20 @@ export default function Analytics({ navigation }: any) {
         }
       })
       .catch(() => undefined)
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => {
+        if (isRefreshing) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadAnalytics();
+  }, [loadAnalytics]);
 
   const handleOccasionInsight = async () => {
     const selectedOccasion = occasion === "Others" ? customOccasion.trim() : occasion;
@@ -128,7 +155,18 @@ export default function Analytics({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadAnalytics({ isRefreshing: true })}
+            tintColor={palette.primary}
+            colors={[palette.primary]}
+          />
+        }
+      >
         <FadeInView>
           <Header navigation={navigation} />
 

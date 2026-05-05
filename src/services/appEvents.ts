@@ -1,4 +1,4 @@
-type Listener = () => void;
+type Listener<T = unknown> = (payload?: T) => void;
 
 const listeners = new Map<string, Set<Listener>>();
 
@@ -16,6 +16,12 @@ export const emitAppEvent = (eventName: string) => {
   });
 };
 
+export const emitAppEventWithPayload = <T>(eventName: string, payload: T) => {
+  getListeners(eventName).forEach((listener) => {
+    listener(payload);
+  });
+};
+
 export const subscribeToAppEvent = (eventName: string, listener: Listener) => {
   const eventListeners = getListeners(eventName);
   eventListeners.add(listener);
@@ -26,3 +32,4 @@ export const subscribeToAppEvent = (eventName: string, listener: Listener) => {
 };
 
 export const BILL_CREATED_EVENT = "bill-created";
+export const PRODUCT_SAVED_EVENT = "product-saved";

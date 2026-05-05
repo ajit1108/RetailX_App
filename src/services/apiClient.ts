@@ -16,7 +16,8 @@ export async function apiRequest<T>(
   path: string,
   { method = "GET", body, auth = true, cache = true }: ApiOptions = {}
 ): Promise<T> {
-  const cacheKey = `${method}:${path}`;
+  const token = auth ? getAuthToken() : "";
+  const cacheKey = `${method}:${path}:${token}`;
   const now = Date.now();
 
   if (method === "GET" && cache) {
@@ -35,11 +36,8 @@ export async function apiRequest<T>(
     "Content-Type": "application/json",
   };
 
-  if (auth) {
-    const token = getAuthToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
+  if (auth && token) {
+    headers.Authorization = `Bearer ${token}`;
   }
 
   const requestStart = Date.now();

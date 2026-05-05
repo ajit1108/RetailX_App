@@ -1,11 +1,16 @@
 import React from "react";
 import { Image, type ImageStyle, type StyleProp } from "react-native";
+import FontAwesome from "react-native-vector-icons/FontAwesome";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import ioniconGlyphMap from "react-native-vector-icons/glyphmaps/Ionicons.json";
 
 const validIoniconNames = new Set(Object.keys(ioniconGlyphMap));
 
-const iconNameMap: Record<string, string> = {
+const fontAwesomeIconMap: Record<string, string> = {
+  whatsapp: "whatsapp",
+};
+
+const ioniconNameMap: Record<string, string> = {
   "home-outline": "home-outline",
   "cube-outline": "cube-outline",
   "receipt-outline": "receipt-outline",
@@ -53,9 +58,14 @@ export default function AppIcon({
   }
 
   if (typeof resolvedSource === "string") {
-    const iconName = iconNameMap[resolvedSource]
+    const fontAwesomeIcon = fontAwesomeIconMap[resolvedSource];
+    if (fontAwesomeIcon) {
+      return <FontAwesome name={fontAwesomeIcon as any} size={size} color={color} />;
+    }
+
+    const ioniconName = ioniconNameMap[resolvedSource]
       ?? (validIoniconNames.has(resolvedSource) ? resolvedSource : "help-circle-outline");
-    return <Ionicons name={iconName as any} size={size} color={color} />;
+    return <Ionicons name={ioniconName as any} size={size} color={color} />;
   }
 
   if (resolvedSource && typeof resolvedSource === "object") {

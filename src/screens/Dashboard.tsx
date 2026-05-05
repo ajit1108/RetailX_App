@@ -1,5 +1,12 @@
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
@@ -10,17 +17,6 @@ import { apiRequest } from "../services/apiClient";
 import { BILL_CREATED_EVENT, subscribeToAppEvent } from "../services/appEvents";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 
-const getAlertIcon = (type?: string) => {
-  switch (type) {
-    case "low_stock":
-      return "warning-outline";
-    case "expiry":
-      return "time-outline";
-    default:
-      return "alert-circle-outline";
-  }
-};
-
 const overviewCards = [
   {
     title: "Total Sales Today",
@@ -30,10 +26,10 @@ const overviewCards = [
     accent: palette.success,
   },
   {
-    title: "Items Sold Today",
-    value: "142",
-    change: "Track today's billing movement",
-    icon: "cart-outline",
+    title: "Number of Scans",
+    value: "18",
+    change: "Track today's scan activity",
+    icon: "scan-outline",
     accent: palette.accent,
   },
 ];
@@ -66,86 +62,97 @@ const performers = [
 ];
 
 export default function Dashboard({ navigation }: any) {
-  const [dashboard, setDashboard] = useState<any>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<any>(null);
+  const [analyticsSummary, setAnalyticsSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadDashboard = useCallback(
+    async ({ isRefreshing = false }: { isRefreshing?: boolean } = {}) => {
+      if (isRefreshing) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const [dashboardResponse, analyticsResponse] = await Promise.all([
+          apiRequest<any>("/api/dashboard", { cache: false }),
+          apiRequest<any>("/api/analytics", { cache: false }),
+        ]);
+
+        setDashboardSummary(dashboardResponse?.summary ?? null);
+        setAnalyticsSummary(analyticsResponse?.todaySummary ?? null);
+      } catch {
+        setDashboardSummary(null);
+        setAnalyticsSummary(null);
+      } finally {
+        if (isRefreshing) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    let active = true;
-
-    const loadDashboard = () => {
-      setLoading(true);
-
-      apiRequest<any>("/api/dashboard", { cache: false })
-        .then((response) => {
-          if (active) {
-            setDashboard(response);
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (active) {
-            setLoading(false);
-          }
-        });
-    };
-
     loadDashboard();
-    const unsubscribeFocus = navigation.addListener("focus", loadDashboard);
-    const unsubscribeBillCreated = subscribeToAppEvent(BILL_CREATED_EVENT, loadDashboard);
+    const unsubscribeFocus = navigation.addListener("focus", () => {
+      loadDashboard();
+    });
+    const unsubscribeBillCreated = subscribeToAppEvent(BILL_CREATED_EVENT, () => {
+      loadDashboard();
+    });
 
     return () => {
-      active = false;
       unsubscribeFocus();
       unsubscribeBillCreated();
     };
-  }, [navigation]);
+  }, [loadDashboard, navigation]);
 
-  const summary = dashboard?.summary ?? null;
+  const hasLiveSummary = Boolean(dashboardSummary || analyticsSummary);
 
-  const cards = dashboard
+  const cards = hasLiveSummary
     ? [
         {
           title: "Total Sales Today",
-          value: `Rs ${Number(summary?.todaySales || 0).toFixed(2)}`,
-          change: `${summary?.todayBillCount || 0} bills completed today`,
+          value: `Rs ${Number(analyticsSummary?.totalSales || 0).toFixed(2)}`,
+          change: `${analyticsSummary?.billCount || 0} bills completed today`,
           icon: "trending-up-outline",
           accent: palette.success,
         },
         {
-          title: "Items Sold Today",
-          value: String(summary?.todayItemsSold || 0),
-          change: `${summary?.totalProducts || 0} products currently in stock`,
-          icon: "cart-outline",
+          title: "Number of Scans",
+          value: String(analyticsSummary?.scanCount || 0),
+          change: `${analyticsSummary?.totalItemsSold || 0} items sold today`,
+          icon: "scan-outline",
           accent: palette.accent,
         },
       ]
     : overviewCards;
-  const activeAlerts = dashboard?.priorityAlerts?.length
-    ? dashboard.priorityAlerts.map((item: any) => ({
-        title: item.title,
-        subtitle: item.message,
-        icon: getAlertIcon(item.type),
-        color: item.type === "expiry" ? palette.warning : palette.danger,
-      }))
-    : alerts;
-  const topItems = dashboard?.topPerformingItems?.length
-    ? dashboard.topPerformingItems.map((item: any, index: number) => ({
-        title: item.name,
-        subtitle: `Sold ${item.totalSold} units • Rs ${Number(item.revenue || 0).toFixed(2)}`,
-        tag: index === 0 ? "Best seller" : "Active",
-      }))
-    : performers;
+  const activeAlerts = alerts;
+  const topItems = performers;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadDashboard({ isRefreshing: true })}
+            tintColor={palette.primary}
+            colors={[palette.primary]}
+          />
+        }
       >
         <FadeInView>
           <Header
             navigation={navigation}
-            notificationCount={dashboard?.summary?.unreadNotificationCount ?? 0}
+            notificationCount={dashboardSummary?.unreadNotificationCount ?? 0}
           />
 
           <View style={styles.heroCard}>
@@ -153,8 +160,8 @@ export default function Dashboard({ navigation }: any) {
               <Text style={styles.heroEyebrow}>STORE SNAPSHOT</Text>
               <Text style={styles.heroTitle}>Your shop is moving well today</Text>
               <Text style={styles.heroSubtitle}>
-                {summary
-                  ? `${summary.todayBillCount || 0} bills generated, ${summary.todayItemsSold || 0} items sold, and ${summary.lowStockCount || 0} products need attention.`
+                {hasLiveSummary
+                  ? `${analyticsSummary?.billCount || 0} bills generated, ${analyticsSummary?.totalItemsSold || 0} items sold, and ${dashboardSummary?.lowStockCount || 0} products need attention.`
                   : "Sales are healthy, inventory needs attention, and billing is ready for the next rush."}
               </Text>
             </View>

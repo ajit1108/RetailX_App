@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Animated, FlatList, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Badge, Button, Card } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -20,11 +20,17 @@ type Notification = {
 
 export default function Notifications({ navigation }: any) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const badgeScale = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    apiRequest<any>("/api/notifications")
+  const loadNotifications = useCallback(
+    async ({ isRefreshing = false }: { isRefreshing?: boolean } = {}) => {
+      if (isRefreshing) {
+        setRefreshing(true);
+      }
+
+      await apiRequest<any>("/api/notifications", { cache: false })
       .then((response) => {
         if (Array.isArray(response.notifications)) {
           setNotifications(
@@ -39,8 +45,19 @@ export default function Notifications({ navigation }: any) {
           );
         }
       })
-      .catch(() => undefined);
-  }, []);
+      .catch(() => undefined)
+      .finally(() => {
+        if (isRefreshing) {
+          setRefreshing(false);
+        }
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
 
   const unreadCount = notifications.filter((item) => !item.isRead).length;
 
@@ -108,6 +125,14 @@ export default function Notifications({ navigation }: any) {
             data={notifications}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => loadNotifications({ isRefreshing: true })}
+                tintColor={palette.primary}
+                colors={[palette.primary]}
+              />
+            }
             renderItem={({ item, index }) => (
               <FadeInView delay={index * 40}>
                 <Card style={styles.card}>

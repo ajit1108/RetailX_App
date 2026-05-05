@@ -1,14 +1,23 @@
 let authToken = "";
 let authUser: any = null;
 
-export function setAuthSession(token: string, user: any) {
+const resetSessionState = () => {
+  authToken = "";
+  authUser = null;
+};
+
+export async function setAuthSession(token: string, user: any) {
   authToken = token;
   authUser = user;
 }
 
-export function clearAuthSession() {
-  authToken = "";
-  authUser = null;
+export async function loadAuthSession() {
+  resetSessionState();
+  return null;
+}
+
+export async function clearAuthSession() {
+  resetSessionState();
 }
 
 export function getAuthToken() {

@@ -48,7 +48,7 @@ export default function Auth({ navigation }: Props) {
       });
       console.log("Auth request success:", path);
 
-      setAuthSession(response.token, response.user);
+      await setAuthSession(response.token, response.user);
       navigation.replace("BottomTabs");
     } catch (error) {
       console.log("Auth request error:", error);

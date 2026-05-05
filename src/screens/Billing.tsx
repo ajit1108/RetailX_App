@@ -1,5 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FlatList,
+  Linking,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Button, Card, Snackbar, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -39,55 +47,59 @@ export default function Billing({ navigation }: any) {
   const [qty, setQty] = useState("1");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [customerMobile, setCustomerMobile] = useState("");
   const [scannerVisible, setScannerVisible] = useState(false);
   const [billItems, setBillItems] = useState<BillItem[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductSuggestion[]>([]);
   const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [submittingBill, setSubmittingBill] = useState(false);
+  const [sharingOnWhatsApp, setSharingOnWhatsApp] = useState(false);
+  const [lastBillLink, setLastBillLink] = useState("");
   const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
   const sanitizeBarcode = (value: string) => value.replace(/\D/g, "").trim();
   const sanitizeSearchText = (value: string) =>
     String(value || "").trim().replace(/[^\w\s./:-]/g, " ");
-  const sanitizeMobile = (value: string) => value.replace(/\D/g, "").slice(0, 10);
   const isValidBarcode = (value: string) => /^\d{8,13}$/.test(value);
-  const isValidMobileNumber = (value: string) => /^[6-9]\d{9}$/.test(sanitizeMobile(value));
+
+  const loadCatalogProducts = useCallback(
+    async ({ isRefreshing = false }: { isRefreshing?: boolean } = {}) => {
+      if (isRefreshing) {
+        setRefreshing(true);
+      }
+
+      await apiRequest<any>("/api/products", { cache: false })
+        .then((response) => {
+          const grouped = response.productsByCategory || {};
+          const flattened = Object.values(grouped)
+            .flat()
+            .map((item: any) => ({
+              id: item._id || item.id,
+              barcode: item.barcode || "",
+              name: item.name,
+              price: Number(item.price || 0),
+              category: item.category || "Uncategorized",
+              quantity: Number(item.quantity || 0),
+            }));
+
+          setCatalogProducts(flattened);
+        })
+        .catch(() => {
+          setCatalogProducts([]);
+        })
+        .finally(() => {
+          if (isRefreshing) {
+            setRefreshing(false);
+          }
+        });
+    },
+    []
+  );
 
   useEffect(() => {
-    let active = true;
-
-    apiRequest<any>("/api/products")
-      .then((response) => {
-        if (!active) {
-          return;
-        }
-
-        const grouped = response.productsByCategory || {};
-        const flattened = Object.values(grouped)
-          .flat()
-          .map((item: any) => ({
-            id: item._id || item.id,
-            barcode: item.barcode || "",
-            name: item.name,
-            price: Number(item.price || 0),
-            category: item.category || "Uncategorized",
-            quantity: Number(item.quantity || 0),
-          }));
-
-        setCatalogProducts(flattened);
-      })
-      .catch(() => {
-        if (active) {
-          setCatalogProducts([]);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+    loadCatalogProducts();
+  }, [loadCatalogProducts]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -229,16 +241,10 @@ export default function Billing({ navigation }: any) {
       return;
     }
 
-    if (!isValidMobileNumber(customerMobile)) {
-      setSnackbarMessage("Enter a valid 10-digit mobile number.");
-      return;
-    }
-
     try {
       setSubmittingBill(true);
       const requestBody = {
         taxRate: 0.05,
-        customerMobile: sanitizeMobile(customerMobile),
         items: billItems.map((item) => ({
           productId: item.id,
           barcode: sanitizeBarcode(item.barcode),
@@ -254,23 +260,12 @@ export default function Billing({ navigation }: any) {
       });
 
       emitAppEvent(BILL_CREATED_EVENT);
-      const whatsappResults = Array.isArray(response.whatsapp?.results)
-        ? response.whatsapp.results
-        : [];
-      const successfulDeliveries = whatsappResults.filter((item: any) => item.sent);
-
+      setLastBillLink(String(response.pdfDownloadUrl || ""));
       setBillItems([]);
-      setCustomerMobile("");
       setSearchQuery("");
       setSuggestions([]);
       setQty("1");
-      setSnackbarMessage(
-        successfulDeliveries.length === 2
-          ? "Bill generated and sent to WhatsApp."
-          : successfulDeliveries.length > 0
-          ? "Bill generated. Some WhatsApp deliveries failed."
-          : "Failed to send WhatsApp message."
-      );
+      setSnackbarMessage("Bill generated successfully.");
     } catch (error) {
       setSnackbarMessage(
         error instanceof Error ? error.message : "Unable to generate bill."
@@ -280,12 +275,43 @@ export default function Billing({ navigation }: any) {
     }
   };
 
+  const handleShareOnWhatsApp = async () => {
+    if (!lastBillLink) {
+      setSnackbarMessage("Generate a bill first to share it on WhatsApp.");
+      return;
+    }
+
+    const message = encodeURIComponent(
+      `RetailX bill is ready.\n\nView or download your invoice here:\n${lastBillLink}`
+    );
+
+    try {
+      setSharingOnWhatsApp(true);
+      await Linking.openURL(`https://wa.me/?text=${message}`);
+    } catch {
+      setSnackbarMessage("Unable to open WhatsApp.");
+    } finally {
+      setSharingOnWhatsApp(false);
+    }
+  };
+
   const shouldShowNoProducts =
     debouncedQuery.trim().length > 0 && !searching && suggestions.length === 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadCatalogProducts({ isRefreshing: true })}
+            tintColor={palette.primary}
+            colors={[palette.primary]}
+          />
+        }
+      >
         <FadeInView>
           <Header navigation={navigation} />
 
@@ -294,8 +320,8 @@ export default function Billing({ navigation }: any) {
               <Text style={styles.heroEyebrow}>BILLING DESK</Text>
               <Text style={styles.heroTitle}>Scan barcodes and build bills faster</Text>
               <Text style={styles.heroText}>
-                Search products instantly, keep the bill clean, and send receipts
-                directly on WhatsApp after checkout.
+                Search products instantly, keep the bill clean, and share receipts
+                only when you choose to after checkout.
               </Text>
             </View>
             <View style={styles.heroIcon}>
@@ -388,22 +414,6 @@ export default function Billing({ navigation }: any) {
                 style={styles.input}
                 left={<TextInput.Icon icon="numeric" />}
               />
-
-              <TextInput
-                mode="outlined"
-                label="Mobile Number"
-                value={customerMobile}
-                onChangeText={(value) => setCustomerMobile(sanitizeMobile(value))}
-                keyboardType="phone-pad"
-                outlineColor={palette.border}
-                activeOutlineColor={palette.primary}
-                style={styles.input}
-                left={<TextInput.Icon icon="phone-outline" />}
-                error={customerMobile.length > 0 && !isValidMobileNumber(customerMobile)}
-              />
-              <Text style={styles.helperText}>
-                Bill will be sent to both the customer and owner WhatsApp numbers.
-              </Text>
 
               <Button
                 mode="contained"
@@ -521,7 +531,19 @@ export default function Billing({ navigation }: any) {
                 loading={submittingBill}
                 disabled={submittingBill}
               >
-                {submittingBill ? "Sending Bill..." : "Generate Bill"}
+                {submittingBill ? "Generating Bill..." : "Generate Bill"}
+              </Button>
+
+              <Button
+                mode="outlined"
+                textColor={palette.white}
+                style={styles.shareBtn}
+                icon="whatsapp"
+                onPress={handleShareOnWhatsApp}
+                loading={sharingOnWhatsApp}
+                disabled={sharingOnWhatsApp || !lastBillLink}
+              >
+                Send via WhatsApp
               </Button>
             </Card.Content>
           </Card>
@@ -825,5 +847,10 @@ const styles = StyleSheet.create({
   generateBtn: {
     marginTop: spacing.md,
     borderRadius: radii.md,
+  },
+  shareBtn: {
+    marginTop: spacing.sm,
+    borderRadius: radii.md,
+    borderColor: "rgba(255,255,255,0.45)",
   },
 });

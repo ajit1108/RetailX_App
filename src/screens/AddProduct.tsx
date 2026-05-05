@@ -12,6 +12,7 @@ import FadeInView from "../components/FadeInView";
 import ScalePressable from "../components/ScalePressable";
 import { mockCatalog } from "../data/mockCatalog";
 import { apiRequest } from "../services/apiClient";
+import { PRODUCT_SAVED_EVENT, emitAppEventWithPayload } from "../services/appEvents";
 import { scanProductLabelFromCamera } from "../services/scannerService";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 import {
@@ -253,10 +254,11 @@ export default function AddProduct({ navigation }: any) {
         expiryDate: normalizeExpiryDate(expiryDate),
       };
       console.log("AddProduct save request:", requestBody);
-      await apiRequest<any>("/api/products", {
+      const response = await apiRequest<any>("/api/products", {
         method: "POST",
         body: requestBody,
       });
+      emitAppEventWithPayload(PRODUCT_SAVED_EVENT, response.product);
       setSnackbarMessage("Product saved successfully.");
       navigation.goBack();
     } catch (error) {

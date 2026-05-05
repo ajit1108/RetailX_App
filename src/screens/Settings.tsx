@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Linking, ScrollView, StyleSheet, Switch, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Linking, RefreshControl, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { Button, Card, Divider, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -36,9 +36,15 @@ export default function Settings({ navigation }: any) {
     insights: true,
     receipts: false,
   });
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    apiRequest<any>("/api/settings")
+  const loadSettings = useCallback(
+    async ({ isRefreshing = false }: { isRefreshing?: boolean } = {}) => {
+      if (isRefreshing) {
+        setRefreshing(true);
+      }
+
+      await apiRequest<any>("/api/settings", { cache: false })
       .then((response) => {
         setEnabled({
           alerts: Boolean(response.preferences?.lowStockAlerts),
@@ -46,8 +52,19 @@ export default function Settings({ navigation }: any) {
           receipts: Boolean(response.preferences?.autoSaveReceipts),
         });
       })
-      .catch(() => undefined);
-  }, []);
+      .catch(() => undefined)
+      .finally(() => {
+        if (isRefreshing) {
+          setRefreshing(false);
+        }
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
   const handlePreferenceChange = (key: string, value: boolean) => {
     const nextEnabled = { ...enabled, [key]: value };
@@ -72,6 +89,14 @@ export default function Settings({ navigation }: any) {
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadSettings({ isRefreshing: true })}
+            tintColor={palette.primary}
+            colors={[palette.primary]}
+          />
+        }
       >
         <FadeInView>
           <View style={styles.header}>
