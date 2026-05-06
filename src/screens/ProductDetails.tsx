@@ -9,19 +9,36 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 
 import FadeInView from "../components/FadeInView";
 import ScalePressable from "../components/ScalePressable";
+import { apiRequest } from "../services/apiClient";
+import { PRODUCT_SAVED_EVENT, emitAppEventWithPayload } from "../services/appEvents";
 import { palette, radii, shadow, spacing } from "../theme/appTheme";
 
 export default function ProductDetails({ route, navigation }: any) {
-  const { name, quantity, price, category, expiry } = route.params || {};
+  const { productId, name, quantity, price, category, expiry } = route.params || {};
 
   const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [productName, setProductName] = useState(name || "Organic Milk");
   const [productQty, setProductQty] = useState(String(quantity || "24"));
-  const [productPrice, setProductPrice] = useState(price || "Rs 58");
+  const [productPrice, setProductPrice] = useState(
+    String(price ?? "58").replace(/^Rs\s*/i, "")
+  );
   const [productCategory, setProductCategory] = useState(category || "Dairy");
-  const [productExpiry, setProductExpiry] = useState(expiry || "12/12/2026");
+  const [productExpiry, setProductExpiry] = useState("");
   const [selectedExpiryDate, setSelectedExpiryDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  React.useEffect(() => {
+    const parsedExpiry = parseExpiryDate(expiry || "");
+
+    if (parsedExpiry) {
+      setProductExpiry(formatDateValue(parsedExpiry));
+      setSelectedExpiryDate(parsedExpiry);
+      return;
+    }
+
+    setProductExpiry(String(expiry || "12/12/2026"));
+  }, [expiry]);
 
   const formatDateValue = (value: Date) => {
     const year = value.getFullYear();
@@ -60,6 +77,11 @@ export default function ProductDetails({ route, navigation }: any) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
 
+  const normalizeNumberInput = (value: string) => {
+    const parsedValue = Number(String(value || "").replace(/[^\d.]/g, ""));
+    return Number.isNaN(parsedValue) ? 0 : parsedValue;
+  };
+
   const openDatePicker = () => {
     const parsed = parseExpiryDate(productExpiry);
     setSelectedExpiryDate(parsed || new Date());
@@ -80,6 +102,46 @@ export default function ProductDetails({ route, navigation }: any) {
 
     setSelectedExpiryDate(nextDate);
     setProductExpiry(formatDateValue(nextDate));
+  };
+
+  const handlePrimaryAction = async () => {
+    if (!isEditing) {
+      setIsEditing(true);
+      return;
+    }
+
+    if (!productId) {
+      setIsEditing(false);
+      navigation.goBack();
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        name: productName.trim(),
+        quantity: Math.max(normalizeNumberInput(productQty), 0),
+        price: Math.max(normalizeNumberInput(productPrice), 0),
+        category: productCategory.trim(),
+        expiryDate: parseExpiryDate(productExpiry)
+          ? formatDateValue(parseExpiryDate(productExpiry) as Date)
+          : productExpiry.trim(),
+      };
+
+      const response = await apiRequest<any>(`/api/products/${productId}`, {
+        method: "PUT",
+        body: payload,
+      });
+
+      emitAppEventWithPayload(PRODUCT_SAVED_EVENT, response.product);
+      setIsEditing(false);
+      navigation.goBack();
+    } catch {
+      setIsEditing(true);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -196,13 +258,10 @@ export default function ProductDetails({ route, navigation }: any) {
                 style={styles.actionBtn}
                 buttonColor={isEditing ? palette.primaryDark : palette.primary}
                 textColor={palette.white}
-                onPress={() => {
-                  if (isEditing) {
-                    navigation.goBack();
-                  }
-                  setIsEditing((current) => !current);
-                }}
+                onPress={handlePrimaryAction}
                 icon={isEditing ? "content-save-outline" : "pencil-outline"}
+                loading={saving}
+                disabled={saving}
               >
                 {isEditing ? "Save Changes" : "Edit Product"}
               </Button>

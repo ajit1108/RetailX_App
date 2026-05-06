@@ -49,7 +49,9 @@ export default function Inventory({ navigation }: any) {
             stock: product.quantity || 0,
             category: product.category || "Uncategorized",
             price: `Rs ${product.price || 0}`,
+            priceValue: product.price || 0,
             expiry: product.expiryDate,
+            barcode: product.barcode || "",
           }));
 
         setItems(flattened);
@@ -263,11 +265,13 @@ export default function Inventory({ navigation }: any) {
                 onPress={() => {
                   setDialogVisible(false);
                   navigation.navigate("ProductDetails", {
+                    productId: selectedItem?.id,
                     name: selectedItem?.name,
                     quantity: String(selectedItem?.stock ?? ""),
-                    price: selectedItem?.price ?? "",
+                    price: String(selectedItem?.priceValue ?? ""),
                     category: selectedItem?.category,
-                    expiry: "12/12/2026",
+                    expiry: selectedItem?.expiry ?? "",
+                    barcode: selectedItem?.barcode ?? "",
                   });
                 }}
               >
